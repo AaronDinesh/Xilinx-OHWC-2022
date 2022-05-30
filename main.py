@@ -13,22 +13,33 @@ import torch.optim as optim
 class NeuralNetwork(torch.nn.Module):
     def __init__(self):
         super(NeuralNetwork, self).__init__()
-        self.conv_1 = torch.nn.Conv2d(1, 1, (501, 501), (1, 1), 6)
-        self.maxPool_1 = torch.nn.AdaptiveMaxPool2d((128,128))
-        self.conv_2 = torch.nn.Conv2d(1, 1, (65, 65), (1, 1))
-        self.maxPool_2 = torch.nn.AdaptiveMaxPool2d((18, 18))
-        self.fc_1 = torch.nn.Linear(18, 9)
-        self.fc_2 = torch.nn.Linear(9, 3)
+        #torch.nn.Conv2d(1, 1, (101, 101), (1, 1)) #Input: 1000x1000 Output: 900x900
+        #torch.nn.MaxPool2d(2, 2) #Input: 900x900 Output: 450x450
+        self.conv_1 = torch.nn.Conv2d(1, 1, kernel_size=(64, 64), stride=(2, 2))
+        self.maxPool_1 = torch.nn.MaxPool2d(64, stride=1)
+        self.conv_2 = torch.nn.Conv2d(1, 1, kernel_size=(32, 32), stride=(2, 2))
+        self.maxPool_2 = torch.nn.MaxPool2d(32,stride=1)
+        self.conv_3 = torch.nn.Conv2d(1, 1, kernel_size=(16, 16), stride=(2, 2))
+        self.maxPool_3 = torch.nn.MaxPool2d(16, stride=1)
+        self.conv_4 = torch.nn.Conv2d(1, 1, kernel_size=(8, 8), stride=(2, 2))
+        self.maxPool_4 = torch.nn.MaxPool2d(8, stride=1)
+        self.fc_1 = torch.nn.Linear(361, 4)
+        self.dropout = torch.nn.Dropout(p=0.2)
+
 
     def forward(self, x):
-        layer_1 = self.maxPool_1(self.conv_1(x))
+        conv_output = self.conv_1(x)
+        layer_1 = self.maxPool_1(conv_output)
         out_layer_1 = torch.nn.functional.relu(layer_1)
         layer_2 = self.maxPool_2(self.conv_2(out_layer_1))
         out_layer_2 = torch.nn.functional.relu(layer_2)
-        layer_3 = self.fc_1(out_layer_2)
+        layer_3 = self.maxPool_3(self.conv_3(out_layer_2))
         out_layer_3 = torch.nn.functional.relu(layer_3)
-        layer_4 = self.fc_2(out_layer_3)
-        final_out = torch.nn.functional.relu(layer_4)
+        layer_4 = self.maxPool_4(self.conv_4(out_layer_3))
+        out_layer_4 = torch.nn.functional.relu(layer_4)
+        dropout_flatten = torch.flatten(self.dropout(out_layer_4), start_dim=1)
+        layer_5 = self.fc_1(dropout_flatten)
+        final_out = torch.nn.functional.softmax(layer_5)
         return final_out
 
 
@@ -71,7 +82,7 @@ class customDataset(Dataset):
         subtlety = self.dataframe.iloc[idx, 10]
 
         sample = (
-            skimage.transform.resize(image.pixel_array, (1000, 1000)),
+            skimage.transform.resize(image.pixel_array, (1024, 1024)),
             pathology
             # 'breast_density': breast_density,
             # 'breast_side'   : breast_side,
@@ -90,12 +101,14 @@ class customDataset(Dataset):
 
 
 
+# Dataset is too big to use in its entirity. So maybe we could split the dataset and
+# create new trainloader and testloaders on the fly??
+#testing_dataset = customDataset(r"C:\Users\aaron\Desktop\Coding\FPGA AI Project\mass_case_description_test_set.csv", r"C:\Breast-Mass-Images\CBIS-DDSM\Mass-Test")
 
-training_dataset = customDataset(r"C:/Users/aaron/Desktop/Coding/FPGA AI Project/mass_case_description_train_set.csv", r"C:\Breast-Mass-Images\CBIS-DDSM\Mass-Training")
-testing_dataset = customDataset(r"C:\Users\aaron\Desktop\Coding\FPGA AI Project\mass_case_description_test_set.csv", r"C:\Breast-Mass-Images\CBIS-DDSM\Mass-Test")
+batch_size = 4
 
-trainloader = torch.utils.data.DataLoader(training_dataset, batch_size=1000, shuffle=True)
-testloader = torch.utils.data.DataLoader(training_dataset, batch_size=1000, shuffle=True)
+
+#testloader = torch.utils.data.DataLoader(testing_dataset, batch_size=batch_size, shuffle=False)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using {device} device")
@@ -105,23 +118,28 @@ model = NeuralNetwork()
 criteria = torch.nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
-for epoch in range(2):
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        inputs, real_pathologies = data
-        inputs = inputs[:, None, :]
-        print(inputs.shape)
-        optimizer.zero_grad()
-        model_guessed_pathologies = model(inputs)
-        loss = criteria(model_guessed_pathologies, real_pathologies)
-        loss.backward()
-        optimizer.step()
-        running_loss += loss.item()
-        print(i)
+for dataset in range(14):
+    path_to_dataset = rf"C:/Users/aaron/Desktop/Coding/FPGA AI Project/massTrain{dataset}.csv"
+    training_dataset = customDataset(path_to_dataset, r"C:\Breast-Mass-Images\CBIS-DDSM\Mass-Training")
+    trainloader = torch.utils.data.DataLoader(training_dataset, batch_size=batch_size, shuffle=False)
 
-        if i % 100 == 0:
-            print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 100:.3f}')
-            running_loss = 0.0
+    for epoch in range(2):
+        running_loss = 0.0
+        for i, data in enumerate(trainloader, 0):
+            inputs, real_pathologies = data
+            inputs = torch.unsqueeze(inputs, 1)
+            print(inputs.shape)
+            optimizer.zero_grad()
+            model_guessed_pathologies = model(inputs.float())
+            loss = criteria(model_guessed_pathologies, real_pathologies)
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
+            print(i)
+
+            if i % 100 == 0:
+                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 100:.3f}')
+                running_loss = 0.0
 
 print('Training Done')
 
