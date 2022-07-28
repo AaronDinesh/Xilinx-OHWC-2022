@@ -119,7 +119,7 @@ criteria = torch.nn.CrossEntropyLoss()
 optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
 for dataset in range(14):
-    path_to_dataset = rf"C:/Users/aaron/Desktop/Coding/FPGA AI Project/massTrain{dataset}.csv"
+    path_to_dataset = rf"massTrain{dataset}.csv"
     training_dataset = customDataset(path_to_dataset, r"C:\Breast-Mass-Images\CBIS-DDSM\Mass-Training")
     trainloader = torch.utils.data.DataLoader(training_dataset, batch_size=batch_size, shuffle=False)
 
